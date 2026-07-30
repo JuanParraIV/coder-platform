@@ -123,6 +123,55 @@ export CODER_EXTERNAL_AUTH_1_SCOPES="read:jira-work write:jira-work read:jira-us
 
 ---
 
+## Distribución de la OAuth App de Atlassian — habilitar para TODOS los usuarios
+
+**Problema:** una OAuth App recién creada en `developer.atlassian.com` nace en modo
+**Development**. En ese modo **solo el dueño de la app** (quien la creó) puede
+autorizarla. Cualquier otro usuario que pulse "Login with Atlassian" ve:
+
+> *"You don't have access to this app. This application is in development — only the
+> owner of this application may grant it access to their account."*
+
+**Esto es independiente del acceso a los datos.** Invitar al usuario a Jira/Confluence
+o a un team le da acceso a los **recursos**, pero NO le permite **autorizar la app**.
+Son dos gates separados:
+
+| Gate | Qué habilita | Dónde se concede |
+|---|---|---|
+| Acceso a Jira/Confluence | Que el usuario **vea datos** | admin.atlassian.com (invitar al sitio/producto) |
+| **Distribución de la OAuth App** | Que el usuario **pueda autorizar** la app (hacer el Login) | developer.atlassian.com → app → Distribution |
+
+### Pasos para distribuir (habilitar sharing)
+
+1. Entra a **developer.atlassian.com** → **Console** → selecciona tu app OAuth 2.0.
+2. En el menú lateral, abre **Distribution** (Distribución).
+3. Pulsa **Edit** y cambia el estado de **Development** a **Sharing** (distribuida).
+4. Atlassian exige completar unos campos para poder compartir:
+   - **Vendor / nombre** del proveedor.
+   - **Privacy policy URL** (obligatoria).
+   - Opcional: términos, security/contact.
+   - **Does your app store personal data?** — responde según corresponda.
+5. **Guarda.** El cambio es inmediato: a partir de ahí **cualquier usuario** puede
+   pulsar "Login with Atlassian" y autorizar con **su** cuenta.
+
+> No cambia scopes, client_id ni secret — solo **quién puede autorizar**. No hay que
+> tocar `server.env` ni el template.
+
+### Verificación
+
+- El **owner** ya podía conectar aun en Development (por eso funcionaba con JuanParraIV).
+- Prueba real: un usuario **no-owner** (p.ej. `susanarojas665@gmail.com`) →
+  Account → External Authentication → **Login with Atlassian** → debe llegar a la
+  pantalla de consentimiento de Atlassian (elegir sitio) **sin** el mensaje de
+  "app in development". Tras autorizar, su token queda en Coder y el MCP de Jira
+  usa SU identidad.
+
+> Recordatorio: además de distribuir la app, el usuario no-owner debe tener acceso
+> al **sitio Atlassian** (invitado en admin.atlassian.com); si no, autoriza la app
+> pero no ve proyectos (aislamiento correcto por identidad).
+
+---
+
 ## Gotchas transversales (aprendidos)
 
 1. **El dueño debe iniciar el build**: `coder restart <owner>/<ws>` como ADMIN NO
@@ -134,3 +183,14 @@ export CODER_EXTERNAL_AUTH_1_SCOPES="read:jira-work write:jira-work read:jira-us
 4. **Token compartido vs per-usuario**: si inyectas una credencial de plataforma
    (App token, service account) tienes cero-pasos pero identidad compartida; el
    per-usuario (external-auth) cuesta 1 clic único. Elegir según auditoría requerida.
+5. **No hornear el access token si expira corto (Atlassian ~1h)**: dos capas —
+   Coder↔proveedor **auto-refresca** (con `offline_access`), pero
+   `data.coder_external_auth.<id>.access_token` se resuelve en **build-time** y queda
+   como **foto** en el env; un workspace con >1h de uptime sirve un token muerto → 401
+   aunque la UI diga "conectado". **Fix:** que el MCP pida el token **fresco en runtime**
+   con `coder external-auth access-token <id>` (wrapper `bash -lc` en el `.mcp.json`),
+   no la env horneada. GitHub no sufre esto (sus `gho_` no caducan por defecto). Límite:
+   `mcp-atlassian` BYOT no refresca dentro de una sesión >1h → reconectar el MCP.
+6. **OAuth App en modo Development bloquea a los no-owner**: ver sección
+   "Distribución de la OAuth App" arriba. Habilitar **Sharing/Distributed** para que
+   usuarios distintos al dueño puedan autorizar.
