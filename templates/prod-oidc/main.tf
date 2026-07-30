@@ -34,28 +34,12 @@ variable "docker_socket" {
   description = "(Opcional) URI del socket de Docker."
 }
 
-# --- Atlassian (mcp-atlassian). En prod: per-usuario o service account via vault. ---
-variable "jira_url" {
-  type        = string
-  default     = ""
-  description = "Base URL de Atlassian Cloud (ej. https://tuorg.atlassian.net)."
-}
-variable "jira_username" {
-  type        = string
-  default     = ""
-  description = "Email de la cuenta Atlassian (Basic auth con el API token)."
-}
-variable "jira_api_token" {
-  type        = string
-  sensitive   = true
-  default     = ""
-  description = "API token de Atlassian."
-}
-variable "confluence_url" {
-  type        = string
-  default     = ""
-  description = "Base URL de Confluence (<jira_url>/wiki). Vacío = Confluence off."
-}
+# --- Atlassian (mcp-atlassian) — PER-USUARIO vía Coder external-auth (OAuth 3LO). ---
+# El token OAuth de cada usuario lo obtiene el MCP en RUNTIME
+# (overlays/*/mcp-config.json → `coder external-auth access-token atlassian`), NO se
+# hornea aquí (evita el 401 por token caducado ~1h del build-time). El proveedor
+# `atlassian` se declara abajo (data.coder_external_auth.atlassian) y se configura en el
+# server (CODER_EXTERNAL_AUTH_*). Se elimina el API token Basic compartido (jira_*).
 
 provider "docker" {
   host = var.docker_socket != "" ? var.docker_socket : null
@@ -70,6 +54,15 @@ data "coder_workspace_owner" "me" {}
 # NO se usa para resolver el rol (eso lo hace el group sync del IdP).
 data "coder_external_auth" "github" {
   id = "github"
+}
+
+# Atlassian per-usuario (OAuth 3LO). Declararlo gatea el build y muestra el botón
+# "Login with Atlassian". El token NO se hornea en el env: el MCP lo pide fresco en
+# runtime (ver overlays/*/mcp-config.json). Requiere CODER_EXTERNAL_AUTH_*_atlassian
+# en el server. Si el usuario no autoriza, el MCP simplemente no ve datos (aislamiento).
+data "coder_external_auth" "atlassian" {
+  id       = "atlassian"
+  optional = true
 }
 
 # =============================================================================
@@ -120,11 +113,9 @@ resource "coder_agent" "main" {
     CODER_ROLE_OVERLAY = local.active.overlay
     # github MCP/git como el usuario (external-auth OAuth) → solo SUS repos.
     GITHUB_TOKEN = data.coder_external_auth.github.access_token
-    # Atlassian (mcp-atlassian). En prod, per-usuario o service account via vault.
-    JIRA_URL            = var.jira_url
-    JIRA_USERNAME       = var.jira_username
-    JIRA_API_TOKEN      = var.jira_api_token
-    CONFLUENCE_URL      = var.confluence_url
+    # Atlassian (Jira/Confluence): token OAuth PER-USUARIO. NO se hornea aquí — el MCP
+    # lo obtiene fresco en cada arranque vía `coder external-auth access-token atlassian`
+    # (overlays/*/mcp-config.json). Evita el 401 por token caducado (~1h) del build-time.
     GIT_AUTHOR_NAME     = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
     GIT_AUTHOR_EMAIL    = data.coder_workspace_owner.me.email
     GIT_COMMITTER_NAME  = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
