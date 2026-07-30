@@ -11,15 +11,11 @@
       }
     },
     "atlassian": {
-      "command": "uvx",
+      "command": "bash",
       "args": [
-        "mcp-atlassian"
-      ],
-      "env": {
-        "ATLASSIAN_OAUTH_ENABLE": "true",
-        "ATLASSIAN_OAUTH_CLOUD_ID": "${ATLASSIAN_OAUTH_CLOUD_ID}",
-        "ATLASSIAN_OAUTH_ACCESS_TOKEN": "${ATLASSIAN_OAUTH_ACCESS_TOKEN}"
-      }
+        "-lc",
+        "CB=$(ls -t /tmp/coder.*/coder 2>/dev/null | head -1); [ -z \"$CB\" ] && CB=coder; export ATLASSIAN_OAUTH_ACCESS_TOKEN=$(\"$CB\" external-auth access-token atlassian 2>/dev/null); export ATLASSIAN_OAUTH_CLOUD_ID=$(curl -s -H \"Authorization: Bearer $ATLASSIAN_OAUTH_ACCESS_TOKEN\" https://api.atlassian.com/oauth/token/accessible-resources 2>/dev/null | jq -r '.[0].id // empty'); export ATLASSIAN_OAUTH_ENABLE=true; exec uvx mcp-atlassian"
+      ]
     },
     "playwright": {
       "command": "npx",

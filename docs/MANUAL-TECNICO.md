@@ -434,6 +434,26 @@ sus recursos).
 **Aislamiento per-usuario demostrado E2E:** mismo template, usuario A ve 90 repos, usuario B ve 0 — el acceso lo
 aplica GitHub según la identidad del token, no la plataforma.
 
+> **Gotcha · el token de Atlassian expira en ~1h (Jira MCP daba 401):** hay **dos capas**. (1) Coder↔Atlassian:
+> el usuario hace *Login* una vez y Coder **auto-refresca** el access token (por `offline_access`) — en la UI
+> *External Authentication* aparece "conectado" siempre. (2) Coder→workspace: si el token se **hornea** en el env
+> en tiempo de build (`ATLASSIAN_OAUTH_ACCESS_TOKEN = data.coder_external_auth.atlassian.access_token`), esa
+> variable es una **foto** que caduca a la hora; un workspace que lleve >1h corriendo sirve un token muerto → **401**,
+> aunque la UI diga "conectado". **Fix aplicado:** el MCP de Atlassian ya **no** usa la foto — pide el token
+> **fresco a Coder en cada arranque** con `coder external-auth access-token atlassian` (wrapper `bash -lc` en
+> `overlays/*/mcp-config.json`) y deriva el `cloud_id` en ese momento. El binario `coder` del workspace vive en
+> `/tmp/coder.*/coder` y el proceso MCP hereda `CODER_AGENT_TOKEN`/`CODER_AGENT_URL` del agente (por eso funciona
+> en el MCP pero NO con `docker exec`, que no hereda ese env). Límite conocido: `mcp-atlassian` en modo BYOT no
+> auto-refresca dentro de una misma sesión — una sesión de Claude abierta >1h puede requerir reconectar el MCP.
+
+> **Gotcha · usuarios nuevos no pueden hacer "Login with Atlassian" ("app in development"):** la OAuth App de
+> Atlassian arranca en modo **Development** en `developer.atlassian.com` → **solo el dueño** puede autorizarla; el
+> resto ve *"You don't have access to this app… only the owner may grant it access."*. Invitar al usuario a Jira/al
+> team da acceso a los **datos**, pero NO habilita autorizar la app. **Fix:** en `developer.atlassian.com` → la app
+> → pestaña **Distribution** → cambiar de *Development* a **Sharing/Distributed** (pide privacy policy URL). Recién
+> ahí cualquier usuario puede conectar Atlassian con su cuenta. (Aplica solo a la app de Atlassian; el login a
+> Coder por GitHub OAuth no tiene esta restricción.)
+
 ## 18 · Aislamiento de red (producción)
 
 | Control | Detalle |
