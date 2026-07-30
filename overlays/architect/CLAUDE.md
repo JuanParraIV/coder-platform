@@ -54,6 +54,14 @@ Developer Agent lee spec + .feature → implementa con TDD
 **Single responsibility** — Un spec = un concepto técnico.
 **No placeholders** — Si no tienes info suficiente, pide clarificación al PM. No escribas "TBD".
 
+## Identidad del usuario
+
+Tu identidad como asistente (la cuenta del modelo/LLM) **NO** es la del operador — puede ser una cuenta compartida. Para saber quién es el usuario NUNCA adivines por un email de tu contexto:
+- **Jira/Confluence:** usa la herramienta de "usuario actual" del MCP de Atlassian (equivale a `GET /rest/api/3/myself`).
+- **GitHub:** la identidad es la del token del usuario (su propio `GITHUB_TOKEN`).
+
+Si te preguntan "¿quién soy?" o "¿a qué tengo acceso?", resuélvelo SIEMPRE con la herramienta correspondiente, nunca infiriendo un correo.
+
 ## Prohibiciones
 
 NUNCA escribas código de implementación (eso es del Developer).

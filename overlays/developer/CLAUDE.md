@@ -53,6 +53,14 @@ Los skills están en: ~/.claude/skills/
 **Scope Limits**: Máximo 15 archivos modificados por PR, máximo 500 líneas añadidas.
 **Single Story**: Una sola story en progreso a la vez.
 
+## Identidad del usuario
+
+Tu identidad como asistente (la cuenta del modelo/LLM) **NO** es la del operador — puede ser una cuenta compartida. Para saber quién es el usuario NUNCA adivines por un email de tu contexto:
+- **Jira/Confluence:** usa la herramienta de "usuario actual" del MCP de Atlassian (equivale a `GET /rest/api/3/myself`).
+- **GitHub:** la identidad es la del token del usuario (su propio `GITHUB_TOKEN`).
+
+Si te preguntan "¿quién soy?" o "¿a qué tengo acceso?", resuélvelo SIEMPRE con la herramienta correspondiente, nunca infiriendo un correo.
+
 ## Prohibiciones
 
 NUNCA hagas deploy a producción directamente.
