@@ -1,0 +1,255 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+body{font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222;}
+h1{font-size:20pt;color:#1a3c6e;} h2{font-size:15pt;color:#1a3c6e;border-bottom:1px solid #ccc;padding-bottom:3px;}
+h3{font-size:12pt;color:#333;}
+table{border-collapse:collapse;width:100%;}
+th,td{border:1px solid #999;padding:5px 8px;font-size:10pt;text-align:left;vertical-align:top;}
+th{background:#1a3c6e;color:#fff;}
+tr:nth-child(even){background:#f2f5fa;}
+code,pre{font-family:Consolas,monospace;font-size:9.5pt;background:#f4f4f4;}
+pre{padding:8px;border:1px solid #ddd;}
+</style></head><body>
+<h1>Plataforma Coder + Claude Code por Rol — Documento TO-BE (Ejecutivo)</h1>
+<p><strong>Para:</strong> Jefaturas / Comité
+<strong>De:</strong> Equipo DevSecOps — Qintess
+<strong>Fecha:</strong> 2026-07-21
+<strong>Estado:</strong> Visión aprobada + <strong>piloto funcional validado end-to-end</strong></p>
+<hr />
+<h2>1. Resumen ejecutivo</h2>
+<p>Estamos construyendo una <strong>plataforma de entornos de desarrollo con IA (Claude Code) gobernada por rol</strong>: cada
+persona del banco recibe, con un solo login, un entorno de trabajo en el navegador (VS Code + terminal + Claude)
+que <strong>solo puede hacer lo que su rol permite</strong> — las herramientas, los accesos y las reglas de trabajo se ajustan
+automáticamente a si es Developer, QA o Architect.</p>
+<p>El valor para el banco es triple:</p>
+<ul>
+<li><strong>Gobierno y seguridad:</strong> cada operador ve y toca únicamente lo que le corresponde. La IA opera dentro de
+  barreras definidas por rol, no "todo para todos".</li>
+<li><strong>Trazabilidad / auditoría:</strong> quién hizo qué, con qué herramientas y sobre qué recursos queda registrado.</li>
+<li><strong>Productividad reproducible:</strong> entornos idénticos, efímeros y listos en minutos — se acabó el "en mi máquina
+  sí funciona".</li>
+</ul>
+<p><strong>Lo más importante para esta presentación:</strong> no es una idea en papel. <strong>El piloto ya está funcionando y
+validado de punta a punta</strong> (ver Sección 5).</p>
+<hr />
+<h2>2. Problema que resuelve</h2>
+<p>Los equipos que trabajan con IA generativa hoy enfrentan:</p>
+<ul>
+<li><strong>Sin gobierno:</strong> cualquiera puede usar la IA con acceso total → riesgo para un entorno bancario (datos, repos,
+  sistemas sensibles).</li>
+<li><strong>Sin trazabilidad:</strong> no hay registro de qué hizo la IA ni con qué permisos.</li>
+<li><strong>Entornos inconsistentes:</strong> cada quien configura su máquina distinto → errores, retrabajo, riesgo.</li>
+<li><strong>Onboarding lento:</strong> montar un entorno seguro y completo toma días.</li>
+</ul>
+<h2>3. La solución (qué reciben los operadores)</h2>
+<p>Una plataforma basada en <strong>Coder</strong> (entornos de desarrollo self-hosted) donde:</p>
+<ol>
+<li>El operador entra con <strong>su cuenta corporativa</strong> (hoy GitHub OAuth; en producción, el IdP del banco).</li>
+<li>La plataforma <strong>detecta su rol automáticamente</strong> según su pertenencia a equipos.</li>
+<li>Se le provisiona un <strong>workspace en el navegador</strong> ya configurado para su rol: VS Code web + Claude Code, con
+   las <strong>skills, integraciones (MCP) y reglas de trabajo</strong> propias de Developer, QA o Architect.</li>
+<li>Los accesos a repos, Jira/Confluence, etc. son <strong>por identidad del usuario</strong> — la IA solo alcanza lo que esa
+   persona ya puede ver.</li>
+</ol>
+<h2>4. Arquitectura (visión de producción)</h2>
+<pre><code>   Operador (navegador)
+        │  login corporativo
+        ▼
+   Coder Control Plane ──► detecta rol por pertenencia a equipos
+        │
+        ▼
+   Workspace por operador
+     • VS Code Web + Claude Code CLI
+     • Overlay del rol (skills + integraciones + reglas)
+     • Aislamiento de red por rol (egress restringido)
+     • Etiqueta de rol para auditoría
+</code></pre>
+<ul>
+<li><strong>Model-agnostic:</strong> Claude hoy; el diseño soporta cambiar de backend LLM (suscripción, Vertex AI, Bedrock) sin
+  rehacer la plataforma.</li>
+<li><strong>Cloud-agnostic:</strong> diseñado para Kubernetes en cualquier nube; se implementa en una.</li>
+</ul>
+<h2>5. Estado actual — <strong>ya funciona</strong> (piloto validado)</h2>
+<p>Todo lo siguiente está <strong>implementado y probado end-to-end</strong> en el entorno piloto:</p>
+<table>
+<thead>
+<tr>
+<th>Capacidad</th>
+<th>Estado</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Entornos Coder + VS Code + Claude Code en el navegador</td>
+<td>✅ Funcionando</td>
+</tr>
+<tr>
+<td>Login con cuenta corporativa (GitHub OAuth)</td>
+<td>✅ Validado</td>
+</tr>
+<tr>
+<td><strong>RBAC: 3 roles</strong> (Developer, QA, Architect) detectados automáticamente</td>
+<td>✅ Validado con cuentas reales</td>
+</tr>
+<tr>
+<td>Cada rol recibe sus skills, integraciones y reglas propias</td>
+<td>✅ Validado</td>
+</tr>
+<tr>
+<td>Integración <strong>GitHub</strong> por usuario (solo ve sus repos)</td>
+<td>✅ Aislamiento demostrado</td>
+</tr>
+<tr>
+<td>Integración <strong>Jira + Confluence</strong> por usuario</td>
+<td>✅ Conectado</td>
+</tr>
+<tr>
+<td>Integración <strong>Playwright</strong> (pruebas automatizadas, rol QA)</td>
+<td>✅ Conectado</td>
+</tr>
+<tr>
+<td><strong>Persistencia:</strong> los entornos sobreviven a reinicios del servidor</td>
+<td>✅ Validado</td>
+</tr>
+<tr>
+<td>Cambio de organización/cliente por configuración central</td>
+<td>✅ Implementado</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Prueba de aislamiento (el punto que más convence):</strong> dos usuarios reales con el mismo template ven cosas
+distintas según su identidad — un usuario ve sus 90 repositorios; otro, con acceso limitado, ve 0. La IA nunca
+excede el acceso de la persona.</p>
+<h2>6. Gobierno por rol (RBAC)</h2>
+<table>
+<thead>
+<tr>
+<th>Recurso</th>
+<th>Developer</th>
+<th>QA</th>
+<th>Architect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Skills habilitadas</td>
+<td>Implementación, code review, frontend/UX</td>
+<td>Generación de pruebas, cobertura, mutación, BDD</td>
+<td>Revisión de arquitectura, specs</td>
+</tr>
+<tr>
+<td>GitHub</td>
+<td>Lectura/escritura</td>
+<td>Lectura</td>
+<td>Lectura</td>
+</tr>
+<tr>
+<td>Jira / Confluence</td>
+<td>Sí</td>
+<td>Sí (crea bugs)</td>
+<td>Sí + Confluence</td>
+</tr>
+<tr>
+<td>Pruebas E2E (Playwright)</td>
+<td>—</td>
+<td>Sí</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Reglas de trabajo (governance)</td>
+<td>BDD-first, límites de alcance</td>
+<td>Umbral de cobertura, calidad de tests</td>
+<td>No-funcionales de banca (PCI, auditoría)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Política de permisos:</strong> en caso de pertenecer a varios equipos, gana el rol <strong>menos permisivo</strong>
+(principio de <em>least-privilege</em>, apropiado para banca).</p>
+<p><strong>Altas y bajas de acceso:</strong> las <strong>degradaciones y salidas se aplican de inmediato</strong> (se termina el entorno);
+las promociones toman efecto en el siguiente arranque. Diseñado para no dejar accesos residuales — punto clave
+para auditoría.</p>
+<h2>7. Roadmap de despliegue (piloto → producción, ~8 semanas)</h2>
+<table>
+<thead>
+<tr>
+<th>Fase</th>
+<th>Entregable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Desplegar plataforma + imagen base en infraestructura del banco</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Integrar login corporativo + resolución de rol</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Overlays por rol + aislamiento de red</td>
+</tr>
+<tr>
+<td>4</td>
+<td>5 early adopters</td>
+</tr>
+<tr>
+<td>5–6</td>
+<td>Feedback y ajustes</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Rollout al squad completo (15–30 personas)</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Revisión de métricas de adopción y gobierno</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Del piloto a producción:</strong> el piloto corre en Docker (1 servidor); la versión de producción es la misma
+arquitectura sobre Kubernetes con el IdP del banco. El diseño de producción (<code>prod-oidc</code>) ya está preparado.</p>
+<h2>8. Riesgos y mitigaciones</h2>
+<table>
+<thead>
+<tr>
+<th>Riesgo</th>
+<th>Mitigación</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Caída del proveedor de identidad</td>
+<td>Acceso administrativo de emergencia</td>
+</tr>
+<tr>
+<td>Consumo/costos de IA</td>
+<td>Presupuesto por usuario + alertas + auto-apagado de entornos inactivos</td>
+</tr>
+<tr>
+<td>Fuga de permisos (overlay desactualizado)</td>
+<td>Reconstrucción automática de configuración por rol</td>
+</tr>
+<tr>
+<td>Fuga de red (egress)</td>
+<td>Aislamiento por defecto (deny-all) + auditoría periódica de políticas</td>
+</tr>
+</tbody>
+</table>
+<h2>9. Observabilidad y KPIs</h2>
+<p>Stack de monitoreo (Prometheus + Grafana + Loki) sobre 4 capas: auditoría de Coder, uso de Claude (tokens,
+herramientas), métricas de K8s y violaciones de gobierno.</p>
+<p><strong>KPIs de negocio:</strong> tasa de adopción · costo por usuario/día · <strong>violaciones de gobierno → 0</strong> · tiempo de
+onboarding.</p>
+<h2>10. Qué pedimos a las jefaturas</h2>
+<ul>
+<li><strong>Validación de la visión</strong> y del enfoque de gobierno por rol para entornos con IA.</li>
+<li><strong>Sponsor</strong> para pasar del piloto (ya funcionando) a un despliegue sobre infraestructura del banco.</li>
+<li>Definir el <strong>grupo de early adopters</strong> (5 personas) para la primera fase.</li>
+</ul>
+<hr />
+<h3>Anexo — Documentación técnica de respaldo</h3>
+<p>El detalle técnico completo vive en <code>docs/TO-BE/</code> (14 documentos): arquitectura, RBAC y mapping de roles,
+template Terraform, skills/MCP por rol, aislamiento de red, imagen base, observabilidad, gestión de secretos,
+OAuth por usuario, y registro de decisiones de diseño. Runbooks operativos en <code>docs/</code>.</p>
+</body></html>

@@ -1,0 +1,23 @@
+# reconcile-roles.service — reconciliador RBAC (Decisión #18), one-shot.
+# Lo dispara reconcile-roles.timer. DRY_RUN=1 horneado: aunque lo instales,
+# NO ejecuta acciones hasta que lo cambies a 0 conscientemente.
+#
+# Instalar (systemd --user, como el usuario dueño de Coder):
+#   cp deploy/systemd/reconcile-roles.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now reconcile-roles.timer
+#
+# Para pasar a modo real: editar Environment=DRY_RUN=0 abajo, daemon-reload,
+# y probar una corrida manual: systemctl --user start reconcile-roles.service
+[Unit]
+Description=Reconciliación RBAC de workspaces Coder (Decisión #18)
+After=coder.service
+Wants=coder.service
+
+[Service]
+Type=oneshot
+# SEGURIDAD: dry-run por defecto. Cambia a 0 para que actúe de verdad.
+Environment=DRY_RUN=1
+Environment=RECONCILE_ORG=juanparra-coder
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env bash %h/Documents/DevOps/coder-platform/scripts/reconcile-roles.sh

@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "atlassian": {
+      "command": "uvx",
+      "args": [
+        "mcp-atlassian"
+      ],
+      "env": {
+        "ATLASSIAN_OAUTH_ENABLE": "true",
+        "ATLASSIAN_OAUTH_CLOUD_ID": "${ATLASSIAN_OAUTH_CLOUD_ID}",
+        "ATLASSIAN_OAUTH_ACCESS_TOKEN": "${ATLASSIAN_OAUTH_ACCESS_TOKEN}"
+      }
+    }
+  }
+}

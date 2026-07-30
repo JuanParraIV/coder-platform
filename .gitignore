@@ -1,0 +1,26 @@
+# Secretos y credenciales (NUNCA versionar)
+*.env
+.env
+*.pem
+*.key
+*-vars.yaml
+server.env
+**/secret*.local
+
+# Terraform state y providers
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+crash.log
+
+# Dependencias / build
+node_modules/
+dist/
+build/
+
+# Sistema / editor
+.DS_Store
+*.log
+.idea/
+.vscode/

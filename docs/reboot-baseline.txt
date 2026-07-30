@@ -1,0 +1,12 @@
+# Baseline pre-reboot — 2026-07-09 09:08:10 -0500
+## systemd coder.service (esperado tras reboot: active + linger)
+active
+enabled
+Linger=yes
+## workspaces (esperado: Started/HEALTHY=true sin tocar nada)
+WORKSPACE             TEMPLATE      STATUS   HEALTHY  LAST BUILT  CURRENT VERSION  OUTDATED  STARTS AT  STOPS AFTER  
+  JuanParraIV/devbox  mvp-embedded  Started  true     13m         wide_hubbard95   false                             
+  admin/dev1          mvp-embedded  Started  true     13m         wide_hubbard95   false                             
+## contenedores + restart policy (esperado tras reboot: Up)
+coder-admin-dev1 | running restart=unless-stopped
+coder-JuanParraIV-devbox | running restart=unless-stopped

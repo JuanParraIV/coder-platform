@@ -1,0 +1,13 @@
+# reconcile-roles.timer — dispara el reconciliador cada 15 min (+ al bootear).
+# La latencia de offboarding = este intervalo (aceptable en homelab).
+[Unit]
+Description=Timer del reconciliador RBAC de Coder (cada 15 min)
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+Persistent=true
+Unit=reconcile-roles.service
+
+[Install]
+WantedBy=timers.target
