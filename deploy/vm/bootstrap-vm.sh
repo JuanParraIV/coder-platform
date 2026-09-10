@@ -52,10 +52,31 @@ source "${CONF}"
 c_ok "Config cargada. ACCESS_URL=${CODER_ACCESS_URL}  Coder v${CODER_VERSION}  arch=${ARCH}"
 
 # --- 2) Paquetes base --------------------------------------------------------
-c_info "Instalando paquetes base (curl, jq, git, ca-certificates)…"
+# Binarios del host que usan los scripts de la plataforma:
+#   curl/jq/git (varios) · openssl+base64 (firma JWT del GitHub App en
+#   resolve-role.sh/gh-app-token.sh) · gnupg/ca-certificates (repos apt).
+# base64/sed/awk vienen en coreutils/base del sistema. gh y coder aparte (abajo).
+c_info "Instalando paquetes base (curl, jq, git, openssl, ca-certificates, gnupg)…"
 sudo apt-get update -qq
-sudo apt-get install -y -qq curl jq git ca-certificates gnupg >/dev/null
+sudo apt-get install -y -qq curl jq git openssl ca-certificates gnupg coreutils >/dev/null
 c_ok "Paquetes base listos."
+
+# --- 2b) GitHub CLI (gh) — repo oficial -------------------------------------
+# Lo usan resolve-role.sh / reconcile-roles.sh (resolución de rol RBAC).
+if command -v gh >/dev/null 2>&1; then
+  c_ok "gh ya presente: $(gh --version | head -1)"
+else
+  c_info "Instalando GitHub CLI (gh) desde el repo oficial…"
+  sudo mkdir -p -m 755 /etc/apt/keyrings
+  curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+    | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg >/dev/null
+  sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+  echo "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+    | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq gh >/dev/null
+  c_ok "Instalado: $(gh --version | head -1)"
+fi
 
 # --- 3) Docker ---------------------------------------------------------------
 if command -v docker >/dev/null 2>&1; then
@@ -183,6 +204,19 @@ else
   done
   [[ "${HEALTHY:-0}" == "1" ]] || c_warn "No respondió aún. Revisa: journalctl --user -u coder -n 50 --no-pager"
 fi
+
+# --- 8b) Verificación de binarios del host ----------------------------------
+c_info "Verificando binarios requeridos por la plataforma…"
+MISSING=0
+for bin in coder docker git gh jq curl openssl base64 sed awk; do
+  if command -v "$bin" >/dev/null 2>&1; then
+    c_ok "$(printf '%-8s' "$bin") $(command -v "$bin")"
+  else
+    c_err "$(printf '%-8s' "$bin") NO ENCONTRADO"; MISSING=1
+  fi
+done
+[[ "${MISSING}" == "0" ]] && c_ok "Todos los binarios presentes." \
+  || c_warn "Faltan binarios (ver arriba). Revisa errores de apt más arriba."
 
 # --- 9) Próximos pasos -------------------------------------------------------
 cat <<EOF

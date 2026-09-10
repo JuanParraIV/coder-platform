@@ -58,9 +58,15 @@ cp deploy/vm/vm-deploy.conf.example deploy/vm/vm-deploy.conf
 bash deploy/vm/bootstrap-vm.sh
 ```
 
-El script instala Docker, el binario Coder (v2.35.1), crea `start-server.sh`,
-la unit `systemd --user`, habilita **linger** (arranque en boot) y siembra un
-`server.env` desde la plantilla. **No arranca Coder** hasta que rellenes los secretos.
+El script instala **todos los binarios del host** (Docker, Coder v2.35.1, `gh`,
+`git`, `jq`, `curl`, `openssl`, `gnupg`/`ca-certificates`), crea `start-server.sh`,
+la unit `systemd --user`, habilita **linger** (arranque en boot), siembra un
+`server.env` desde la plantilla y verifica que cada binario quedó presente.
+**No arranca Coder** hasta que rellenes los secretos.
+
+> Binarios y para qué: `coder` (server/CLI), `docker` (workspaces), `gh` +
+> `openssl` + `jq` + `curl` (resolución de rol RBAC — firman el JWT del GitHub
+> App), `git` (repo). `base64`/`sed`/`awk` ya vienen en el sistema base.
 
 > Si te añadió al grupo `docker`, **cierra sesión y vuelve a entrar** antes de seguir.
 
