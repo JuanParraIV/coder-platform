@@ -1,0 +1,42 @@
+# =============================================================================
+# vm-deploy.conf — Parámetros del bootstrap de Coder en la VM
+# =============================================================================
+# Copia este archivo a `vm-deploy.conf` (mismo dir) y ajústalo.
+# NO contiene secretos: solo rutas/versiones/URL. Los secretos van en server.env.
+# El script `bootstrap-vm.sh` hace `source` de este archivo.
+# -----------------------------------------------------------------------------
+
+# Versión de Coder a instalar (fijada para reproducibilidad; = la del homelab).
+CODER_VERSION="2.35.1"
+
+# Ruta donde vivirá el repo coder-platform en la VM (se clona si no existe).
+# El bind-mount de overlays y las units systemd apuntarán aquí.
+REPO_PATH="${HOME}/coder-platform"
+
+# URL de clonado del repo (SSH requiere key en la VM; HTTPS pedirá credenciales).
+REPO_URL="git@github.com:JuanParraIV/coder-platform.git"
+
+# -----------------------------------------------------------------------------
+# ACCESS URL — cómo alcanzan los usuarios a Coder. FASE 1 vs FASE 2.
+# -----------------------------------------------------------------------------
+# FASE 1 (sin dominio todavía): usa la IP de la VM en la LAN/VPN.
+#   Descubre la IP con:  hostname -I | awk '{print $1}'
+#   Ej: CODER_ACCESS_URL="http://10.0.0.25:3000"
+#
+# FASE 2 (cuando tengas dominio+TLS): cámbialo a https y añade wildcard.
+#   CODER_ACCESS_URL="https://coder.tu-empresa.com"
+#   CODER_WILDCARD_ACCESS_URL="*.coder.tu-empresa.com"
+#
+# OJO: al cambiar el ACCESS_URL hay que ACTUALIZAR los redirect URIs de las
+# OAuth apps (GitHub login, external-auth github, external-auth atlassian).
+# Ver docs/RUNBOOK-vm-deploy.md sección "Cambiar de fase".
+CODER_ACCESS_URL="http://CHANGE_ME:3000"
+
+# Wildcard para apps subdominio (terminal ttyd, code-server). Solo con dominio.
+# Déjalo vacío en Fase 1 (IP) — las apps caen a modo path, funcional para probar.
+CODER_WILDCARD_ACCESS_URL=""
+
+# Dirección de bind. 0.0.0.0:3000 es CRÍTICO: permite host.docker.internal
+# desde los contenedores-workspace y el acceso remoto. No lo cambies salvo que
+# uses un reverse proxy en el mismo host (entonces 127.0.0.1:3000).
+CODER_HTTP_ADDRESS="0.0.0.0:3000"
