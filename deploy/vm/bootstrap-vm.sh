@@ -105,8 +105,11 @@ else
   TARBALL="coder_${CODER_VERSION}_linux_${ARCH}.tar.gz"
   URL="https://github.com/coder/coder/releases/download/v${CODER_VERSION}/${TARBALL}"
   curl -fsSL "${URL}" -o "${TMP}/${TARBALL}" || die "No pude descargar ${URL}"
-  tar -xzf "${TMP}/${TARBALL}" -C "${TMP}" coder
-  install -m 0755 "${TMP}/coder" "${CODER_BIN}"
+  # El tarball contiene ./coder (+ LICENSE/README). Extraemos todo y lo ubicamos.
+  tar -xzf "${TMP}/${TARBALL}" -C "${TMP}"
+  CODER_SRC="$(find "${TMP}" -type f -name coder | head -1)"
+  [[ -n "${CODER_SRC}" ]] || die "No hallé el binario 'coder' dentro de ${TARBALL}"
+  install -m 0755 "${CODER_SRC}" "${CODER_BIN}"
   rm -rf "${TMP}"
   c_ok "Instalado: $(${CODER_BIN} version | head -1)"
 fi
