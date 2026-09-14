@@ -5,6 +5,7 @@
 *.key
 *-vars.yaml
 server.env
+vm-deploy.conf
 **/secret*.local
 
 # Terraform state y providers
