@@ -145,6 +145,10 @@ data "coder_external_auth" "github" {
 # token (modo BYOT) → ve solo su Jira/Confluence. Reemplaza el API token compartido.
 data "coder_external_auth" "atlassian" {
   id = "atlassian"
+  # Opcional: permite crear el workspace SIN conectar Jira (p.ej. cuando aún no
+  # hay HTTPS y Atlassian no admite callbacks http/IP). Sin token, el MCP de
+  # atlassian queda inactivo hasta que el usuario haga "Login with Atlassian".
+  optional = true
 }
 
 resource "coder_agent" "main" {
