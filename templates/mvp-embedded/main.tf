@@ -6,8 +6,10 @@
 #   - /apps/vscode  → VS Code en el browser (code-server, puerto 8080)
 #   - /apps/claude  → Terminal web (ttyd) con `claude` ya lanzado (puerto 7681)
 #
-# Identidad: por ahora usa el owner de Coder. Cuando configures GitHub OAuth +
-# external-auth, descomenta el bloque `coder_external_auth` y el `gh auth login`.
+# Identidad y RBAC: login por OIDC de GitLab. El rol (developer/qa/architect) se
+# resuelve por los GRUPOS de GitLab que Coder sincroniza en el login (claim
+# `groups`), sin resolver externo ni tokens de servicio. Repos per-usuario por
+# external-auth tipo `gitlab`.
 # =============================================================================
 
 terraform {
@@ -58,21 +60,33 @@ variable "docker_socket" {
   description = "(Opcional) URI del socket de Docker."
 }
 
-# --- RBAC (Nivel 3) -----------------------------------------------------------
-variable "github_org" {
+# --- RBAC (Nivel 3) — por GRUPOS de GitLab (OIDC) -----------------------------
+# El rol se deduce de los grupos que Coder recibe del login OIDC de GitLab
+# (data.coder_workspace_owner.me.groups). Estos son los NOMBRES de grupo (según
+# lo que sincronice Coder: CODER_OIDC_GROUP_FIELD=groups, y opcional
+# CODER_OIDC_GROUP_MAPPING). Ajusta los defaults al nombre real de tus grupos.
+variable "group_qa" {
   type        = string
-  default     = ""
-  description = <<-EOT
-    Org de GitHub contra la que resolver el rol por Team. Vacío = modo OVERRIDE
-    (local / cuenta sin teams): se usa `default_role`. Con valor, resolve-role.sh
-    consulta la membresía de team vía `gh` (el provisioner necesita GITHUB_TOKEN con read:org).
-  EOT
+  default     = "qa-engineers"
+  description = "Nombre del grupo GitLab que mapea al rol qa."
+}
+
+variable "group_developer" {
+  type        = string
+  default     = "platform-developers"
+  description = "Nombre del grupo GitLab que mapea al rol developer."
+}
+
+variable "group_architect" {
+  type        = string
+  default     = "architects"
+  description = "Nombre del grupo GitLab que mapea al rol architect."
 }
 
 variable "default_role" {
   type        = string
-  default     = "developer"
-  description = "Rol usado en modo override, o fallback si el usuario no está en ningún team."
+  default     = "unknown"
+  description = "Fallback si el usuario no pertenece a ningún grupo mapeado (fail-closed en banca)."
 }
 
 variable "overlays_host_path" {
@@ -98,21 +112,19 @@ data "coder_provisioner" "me" {}
 data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
-# Resolución automática de rol (Team de GitHub → rol). Fail-closed a `unknown`
-# si hay org pero el usuario no matchea ningún team. Prioridad en resolve-role.sh.
-data "external" "user_role" {
-  program = ["bash", "${path.module}/scripts/resolve-role.sh"]
-  query = {
-    github_username = data.coder_workspace_owner.me.name
-    github_org      = var.github_org
-    # El override (fallback) SOLO aplica en modo local (sin org). En modo real,
-    # un usuario sin team válido debe caer a `unknown` (fail-closed, no a un rol).
-    role_override = var.github_org == "" ? var.default_role : ""
-  }
-}
-
 locals {
-  role = data.external.user_role.result.role
+  # Grupos de GitLab del usuario (sincronizados por Coder desde el claim OIDC).
+  owner_groups = data.coder_workspace_owner.me.groups
+
+  # Resolución de rol por grupo, LEAST-PRIVILEGE: si el usuario está en varios,
+  # gana el menos permisivo (qa < developer < architect). Fail-closed a
+  # `default_role` (=unknown) si no pertenece a ningún grupo mapeado.
+  role = (
+    contains(local.owner_groups, var.group_qa) ? "qa" :
+    contains(local.owner_groups, var.group_developer) ? "developer" :
+    contains(local.owner_groups, var.group_architect) ? "architect" :
+    var.default_role
+  )
 
   # Backend LLM de Claude Code: solo se setean las env vars del backend elegido
   # (evita ANTHROPIC_API_KEY vacío que confundiría a claude).
@@ -131,13 +143,13 @@ locals {
   )
 }
 
-# --- GitHub token para MCP/git: EXTERNAL-AUTH PER-USUARIO --------------------
-# Requisito: el github MCP solo debe tocar los repos a los que el USUARIO tiene
-# acceso → hay que usar SU token (GitHub aplica su acceso). Eso obliga a 1
-# autorización única (botón "Login with GitHub" en el workspace, no una URL).
-# La GitHub App queda SOLO para AuthZ (resolver rol), no para dar acceso a repos.
-data "coder_external_auth" "github" {
-  id = "github"
+# --- GitLab token para MCP/git: EXTERNAL-AUTH PER-USUARIO --------------------
+# El gitlab MCP y git sólo deben tocar los repos a los que el USUARIO tiene
+# acceso → se usa SU token OAuth (external-auth tipo gitlab). Una autorización
+# única (botón "Login with GitLab" en el workspace). El rol (RBAC) NO sale de
+# aquí, sale de los grupos OIDC (arriba).
+data "coder_external_auth" "gitlab" {
+  id = "gitlab"
 }
 
 # --- Atlassian external-auth: Jira/Confluence PER-USUARIO (OAuth 3LO) ---------
@@ -157,8 +169,8 @@ resource "coder_agent" "main" {
 
   env = merge(local.llm_env, {
     CODER_ROLE = local.role
-    # Token OAuth del USUARIO (external-auth) → github MCP solo ve SUS repos.
-    GITHUB_TOKEN = data.coder_external_auth.github.access_token
+    # Token OAuth del USUARIO (external-auth gitlab) → gitlab MCP y git solo ven SUS repos.
+    GITLAB_TOKEN = data.coder_external_auth.gitlab.access_token
     # Atlassian PER-USUARIO (mcp-atlassian modo OAuth/BYOT): token OAuth del usuario.
     # El cloud id se calcula en el startup desde accessible-resources (del sitio
     # que el usuario autorizó). Reemplaza el API token compartido.
@@ -217,11 +229,11 @@ resource "coder_agent" "main" {
     # --- Identidad + git como el usuario real (external-auth) ---
     git config --global user.name  "$${GIT_AUTHOR_NAME}"  || true
     git config --global user.email "$${GIT_AUTHOR_EMAIL}" || true
-    # GITHUB_TOKEN viene del external-auth (token OAuth del usuario). Lo usamos
-    # para que `git push` vaya a su nombre (y el github MCP ya lo toma del env).
-    if [ -n "$${GITHUB_TOKEN}" ]; then
+    # GITLAB_TOKEN viene del external-auth (token OAuth del usuario). Lo usamos
+    # para que `git push` vaya a su nombre (y el gitlab MCP ya lo toma del env).
+    if [ -n "$${GITLAB_TOKEN}" ]; then
       git config --global credential.helper store || true
-      printf 'https://x-access-token:%s@github.com\n' "$${GITHUB_TOKEN}" > ~/.git-credentials
+      printf 'https://oauth2:%s@gitlab.com\n' "$${GITLAB_TOKEN}" > ~/.git-credentials
       chmod 600 ~/.git-credentials || true
     fi
 
