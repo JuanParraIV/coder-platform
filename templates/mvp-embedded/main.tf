@@ -1,13 +1,14 @@
 # =============================================================================
-# Coder Template — MVP Opción B: VS Code Web + Claude Code EMBEBIDOS
+# Coder Template — Variante GitHub + GitHub Copilot (CLI)
 # -----------------------------------------------------------------------------
 # NO usa módulos del registry → funciona con el Terraform 1.5.7 del provisioner.
-# Instala code-server y Claude Code en el startup_script y expone DOS apps:
-#   - /apps/vscode  → VS Code en el browser (code-server, puerto 8080)
-#   - /apps/claude  → Terminal web (ttyd) con `claude` ya lanzado (puerto 7681)
+# Instala code-server y GitHub Copilot CLI (`gh copilot`) en el startup_script y
+# expone DOS apps:
+#   - /apps/vscode   → VS Code en el browser (code-server, puerto 8080)
+#   - /apps/copilot  → Terminal web (ttyd) con `gh copilot` disponible (puerto 7681)
 #
-# Identidad: por ahora usa el owner de Coder. Cuando configures GitHub OAuth +
-# external-auth, descomenta el bloque `coder_external_auth` y el `gh auth login`.
+# RBAC por GitHub Teams (igual que main). El asistente es Copilot CLI, no Claude:
+# NO hay backend LLM de Anthropic ni MCP; el rol inyecta copilot-instructions.md.
 # =============================================================================
 
 terraform {
@@ -17,40 +18,10 @@ terraform {
   }
 }
 
-# --- Backend LLM de Claude Code (swappable) ----------------------------------
-# Precedencia: Vertex > Bedrock > OAuth token (Pro/Max) > API key.
-# Cambiar de backend = editar el config central + scripts/apply-config.sh.
-variable "claude_code_oauth_token" {
-  type        = string
-  sensitive   = true
-  default     = ""
-  description = "Token de suscripción Claude Pro/Max (generado con `claude setup-token`). Backend actual."
-}
-
-variable "anthropic_api_key" {
-  type        = string
-  sensitive   = true
-  default     = ""
-  description = "API key de Anthropic (pago por token). Alternativa al OAuth token."
-}
-
-variable "llm_backend" {
-  type        = string
-  default     = "subscription"
-  description = "Backend: subscription (Pro/Max) | vertex | bedrock | api_key."
-}
-
-variable "vertex_project" {
-  type        = string
-  default     = ""
-  description = "GCP project id para Vertex AI (si llm_backend=vertex)."
-}
-
-variable "vertex_region" {
-  type        = string
-  default     = "us-east5"
-  description = "Región de Vertex AI (ej. us-east5)."
-}
+# --- Asistente: GitHub Copilot CLI -------------------------------------------
+# Esta variante NO usa backend LLM de Anthropic. El asistente es `gh copilot`
+# (extensión de GitHub CLI), que se autentica con el GITHUB_TOKEN del usuario
+# (external-auth) y requiere que su cuenta tenga suscripción a GitHub Copilot.
 
 variable "docker_socket" {
   type        = string
@@ -113,22 +84,6 @@ data "external" "user_role" {
 
 locals {
   role = data.external.user_role.result.role
-
-  # Backend LLM de Claude Code: solo se setean las env vars del backend elegido
-  # (evita ANTHROPIC_API_KEY vacío que confundiría a claude).
-  llm_env = (
-    var.llm_backend == "vertex" ? {
-      CLAUDE_CODE_USE_VERTEX      = "1"
-      ANTHROPIC_VERTEX_PROJECT_ID = var.vertex_project
-      CLOUD_ML_REGION             = var.vertex_region
-      } : var.llm_backend == "bedrock" ? {
-      CLAUDE_CODE_USE_BEDROCK = "1"
-      } : var.claude_code_oauth_token != "" ? {
-      CLAUDE_CODE_OAUTH_TOKEN = var.claude_code_oauth_token
-      } : var.anthropic_api_key != "" ? {
-      ANTHROPIC_API_KEY = var.anthropic_api_key
-    } : {}
-  )
 }
 
 # --- GitHub token para MCP/git: EXTERNAL-AUTH PER-USUARIO --------------------
@@ -140,35 +95,20 @@ data "coder_external_auth" "github" {
   id = "github"
 }
 
-# --- Atlassian external-auth: Jira/Confluence PER-USUARIO (OAuth 3LO) ---------
-# Cada usuario autoriza 1 vez ("Login with Atlassian") → mcp-atlassian usa SU
-# token (modo BYOT) → ve solo su Jira/Confluence. Reemplaza el API token compartido.
-data "coder_external_auth" "atlassian" {
-  id = "atlassian"
-  # Opcional: permite crear el workspace SIN conectar Jira (p.ej. cuando aún no
-  # hay HTTPS y Atlassian no admite callbacks http/IP). Sin token, el MCP de
-  # atlassian queda inactivo hasta que el usuario haga "Login with Atlassian".
-  optional = true
-}
-
 resource "coder_agent" "main" {
   arch = data.coder_provisioner.me.arch
   os   = "linux"
 
-  env = merge(local.llm_env, {
+  env = {
     CODER_ROLE = local.role
-    # Token OAuth del USUARIO (external-auth) → github MCP solo ve SUS repos.
-    GITHUB_TOKEN = data.coder_external_auth.github.access_token
-    # Atlassian PER-USUARIO (mcp-atlassian modo OAuth/BYOT): token OAuth del usuario.
-    # El cloud id se calcula en el startup desde accessible-resources (del sitio
-    # que el usuario autorizó). Reemplaza el API token compartido.
-    ATLASSIAN_OAUTH_ACCESS_TOKEN = data.coder_external_auth.atlassian.access_token
-    # SonarCloud (SAST): pendiente fase DevSecOps — reañadir SONAR_ORG/SONAR_TOKEN aquí.
+    # Token OAuth del USUARIO (external-auth) → `gh`/`gh copilot` y git actúan
+    # como el usuario (Copilot requiere que su cuenta tenga suscripción Copilot).
+    GITHUB_TOKEN        = data.coder_external_auth.github.access_token
     GIT_AUTHOR_NAME     = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
     GIT_AUTHOR_EMAIL    = data.coder_workspace_owner.me.email
     GIT_COMMITTER_NAME  = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
     GIT_COMMITTER_EMAIL = data.coder_workspace_owner.me.email
-  })
+  }
 
   startup_script = <<-EOT
     set -e
@@ -204,15 +144,17 @@ resource "coder_agent" "main" {
       code-server --version >/dev/null
     fi
 
-    # --- Claude Code ---
-    if ! command -v claude >/dev/null 2>&1; then
-      sudo npm install -g @anthropic-ai/claude-code || npm install -g @anthropic-ai/claude-code
+    # --- GitHub CLI + extensión Copilot (`gh copilot`) ---
+    if ! command -v gh >/dev/null 2>&1; then
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+      sudo apt-get update -y && sudo apt-get install -y gh
     fi
-
-    # --- uv/uvx (runtime del MCP mcp-atlassian: `uvx mcp-atlassian`) ---
-    if ! command -v uvx >/dev/null 2>&1; then
-      curl -LsSf https://astral.sh/uv/install.sh | sh || true
-    fi
+    # gh se autentica con GITHUB_TOKEN (external-auth). Instala la extensión Copilot.
+    gh extension install github/gh-copilot >/tmp/gh-copilot.log 2>&1 || \
+      gh extension upgrade gh-copilot >/tmp/gh-copilot.log 2>&1 || true
 
     # --- Identidad + git como el usuario real (external-auth) ---
     git config --global user.name  "$${GIT_AUTHOR_NAME}"  || true
@@ -225,51 +167,25 @@ resource "coder_agent" "main" {
       chmod 600 ~/.git-credentials || true
     fi
 
-    # --- Overlay por ROL: Claude queda configurado con skills + MCP del rol ---
-    # /opt/overlays/<rol> llega por bind-mount del host (homelab) u horneado (prod).
-    # Idempotente: se re-aplica en cada arranque (refleja cambios en overlays/).
+    # --- Overlay por ROL: instrucciones de Copilot del rol -------------------
+    # /opt/overlays/<rol> llega por bind-mount del host u horneado. gh copilot CLI
+    # no tiene "skills"/MCP/persona; el rol aporta copilot-instructions.md (útil
+    # además si el usuario usa Copilot en el editor) y un banner de rol.
     ROLE="$${CODER_ROLE:-unknown}"
     OVL="/opt/overlays/$${ROLE}"
+    mkdir -p ~/workspace/.github
     if [ "$${ROLE}" != "unknown" ] && [ -d "$${OVL}" ]; then
       echo "[overlay] aplicando rol '$${ROLE}'"
-      mkdir -p ~/.claude/skills ~/workspace
-      # 1) Persona/instrucciones del rol → memoria global de Claude
-      [ -f "$${OVL}/CLAUDE.md" ] && cp -f "$${OVL}/CLAUDE.md" ~/.claude/CLAUDE.md
-      # 2) Skills del rol → skills personales (disponibles en todo proyecto)
-      [ -d "$${OVL}/skills" ] && cp -rf "$${OVL}/skills/." ~/.claude/skills/
-      # 3) MCP del rol → .mcp.json del proyecto (~/workspace) + auto-aprobar servers
-      [ -f "$${OVL}/mcp-config.json" ] && cp -f "$${OVL}/mcp-config.json" ~/workspace/.mcp.json
-      node -e 'const fs=require("fs"),os=require("os"),d1=os.homedir()+"/.claude";fs.mkdirSync(d1,{recursive:true});const p=d1+"/settings.json";let o={};try{o=JSON.parse(fs.readFileSync(p))}catch(e){}o.enableAllProjectMcpServers=true;fs.writeFileSync(p,JSON.stringify(o,null,2))' || true
-      # 4) Playwright MCP (rol qa): instalar chromium la 1ª vez (idempotente).
-      if grep -q '@playwright/mcp' ~/workspace/.mcp.json 2>/dev/null && [ ! -d ~/.cache/ms-playwright ]; then
-        echo "[overlay] instalando chromium para @playwright/mcp…"
-        npx -y playwright install --with-deps chromium >/tmp/pw-install.log 2>&1 || true
-      fi
-      # 5) ui-ux-pro-max (rol developer): su search.py requiere Python 3 (stdlib).
-      if [ -d ~/.claude/skills/ui-ux-pro-max ] && ! command -v python3 >/dev/null 2>&1; then
-        echo "[overlay] instalando python3 para la skill ui-ux-pro-max…"
-        sudo apt-get install -y python3 >/tmp/py-install.log 2>&1 || true
-      fi
+      [ -f "$${OVL}/copilot-instructions.md" ] && cp -f "$${OVL}/copilot-instructions.md" ~/workspace/.github/copilot-instructions.md
+      echo "$${ROLE}" > ~/.coder-role
     else
       echo "[overlay] rol '$${ROLE}': sin overlay (perfil mínimo)"
     fi
 
-    # --- Atlassian OAuth: cloud id del sitio que el usuario autorizó ---
-    # ATLASSIAN_OAUTH_ACCESS_TOKEN viene del agent env (external-auth). Derivamos
-    # el cloud id de accessible-resources y lo exportamos ANTES de lanzar ttyd
-    # (claude, hijo de este script, lo hereda). Si no hay token (usuario sin
-    # Connect/sin acceso Atlassian), queda vacío y mcp-atlassian simplemente no
-    # tendrá datos — aislamiento per-usuario correcto.
-    if [ -n "$${ATLASSIAN_OAUTH_ACCESS_TOKEN}" ]; then
-      export ATLASSIAN_OAUTH_CLOUD_ID=$(curl -s -H "Authorization: Bearer $${ATLASSIAN_OAUTH_ACCESS_TOKEN}" \
-        https://api.atlassian.com/oauth/token/accessible-resources 2>/dev/null | jq -r '.[0].id // empty')
-      echo "[atlassian] cloud id: $${ATLASSIAN_OAUTH_CLOUD_ID:-<sin acceso>}"
-    fi
-
     # --- Lanzar servicios ---
     code-server --bind-addr 0.0.0.0:8080 --auth none >/tmp/code-server.log 2>&1 &
-    # claude arranca en ~/workspace (project root) → toma el .mcp.json del rol
-    ttyd -p 7681 -W -t titleFixed='Claude Code' bash -lc 'cd ~/workspace && (claude || bash)' >/tmp/ttyd.log 2>&1 &
+    # Terminal con gh copilot disponible (no es REPL: se usa `gh copilot suggest/explain`).
+    ttyd -p 7681 -W -t titleFixed='GitHub Copilot' bash -lc 'cd ~/workspace && echo "GitHub Copilot CLI — usa:  gh copilot suggest \"...\"   |   gh copilot explain \"...\"  (rol: $(cat ~/.coder-role 2>/dev/null||echo n/a))" && exec bash' >/tmp/ttyd.log 2>&1 &
   EOT
 
   metadata {
@@ -297,11 +213,11 @@ resource "coder_app" "vscode" {
   }
 }
 
-# --- App 2: Terminal con Claude (ruta /apps/claude) --------------------------
-resource "coder_app" "claude" {
+# --- App 2: Terminal con GitHub Copilot (ruta /apps/copilot) -----------------
+resource "coder_app" "copilot" {
   agent_id     = coder_agent.main.id
-  slug         = "claude"
-  display_name = "Claude Code (CLI)"
+  slug         = "copilot"
+  display_name = "GitHub Copilot (CLI)"
   icon         = "/icon/terminal.svg"
   url          = "http://localhost:7681"
   subdomain    = false # ttyd path-based vía el proxy de Coder
