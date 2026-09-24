@@ -1,0 +1,38 @@
+# =============================================================================
+# GitOps — Publica la plantilla de Coder automáticamente (REFERENCIA, variante GitLab)
+# -----------------------------------------------------------------------------
+# Uso previsto: PROD donde el Coder es ALCANZABLE por el runner (K8s / URL
+# pública). En LOCAL/LAN NO aplica — ahí la plantilla se sube a mano con
+# `coder templates push`.
+#
+# Variables CI/CD (Settings → CI/CD → Variables), marcadas Masked/Protected:
+#   CODER_URL             → https://coder.tu-dominio (alcanzable por el runner)
+#   CODER_SESSION_TOKEN   → token de servicio de Coder (Account → Tokens)
+#   OVERLAYS_HOST_PATH    → "" en prod (overlays horneados en la imagen)
+# En prod suele requerir un runner que alcance el Coder (in-cluster/self-hosted).
+# =============================================================================
+stages:
+  - deploy
+
+push-template:
+  stage: deploy
+  image: alpine:3.20
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "gitlab-claude"'
+      changes:
+        - templates/mvp-embedded/**/*
+        - overlays/**/*
+        - .gitlab-ci.yml
+    - if: '$CI_PIPELINE_SOURCE == "web"' # permite lanzarlo manual
+  script:
+    - apk add --no-cache curl bash
+    - curl -fsSL https://coder.com/install.sh | sh
+    - export PATH="$HOME/.local/bin:$PATH"
+    # Rol por grupos OIDC → sólo hace falta overlays_host_path (los group_* tienen default)
+    - >
+      coder templates push mvp-embedded
+      --directory templates/mvp-embedded
+      --var overlays_host_path="${OVERLAYS_HOST_PATH}"
+      --yes
+  # Los workspaces existentes quedan "outdated" → adoptan la versión nueva al
+  # reiniciarse si tienen "Automatic Updates" activado (o con `coder update`).
