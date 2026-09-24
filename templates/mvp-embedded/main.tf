@@ -253,6 +253,13 @@ resource "coder_agent" "main" {
       # 3) MCP del rol → .mcp.json del proyecto (~/workspace) + auto-aprobar servers
       [ -f "$${OVL}/mcp-config.json" ] && cp -f "$${OVL}/mcp-config.json" ~/workspace/.mcp.json
       node -e 'const fs=require("fs"),os=require("os"),d1=os.homedir()+"/.claude";fs.mkdirSync(d1,{recursive:true});const p=d1+"/settings.json";let o={};try{o=JSON.parse(fs.readFileSync(p))}catch(e){}o.enableAllProjectMcpServers=true;fs.writeFileSync(p,JSON.stringify(o,null,2))' || true
+      # 3b) MISMAS capacidades para GitHub Copilot CLI (lee estos mismos overlays):
+      #     MCP → ~/.copilot/mcp-config.json ; skills (SKILL.md) → ~/.copilot/skills/ ;
+      #     persona → .github/copilot-instructions.md (repo instructions de Copilot).
+      mkdir -p ~/.copilot/skills ~/workspace/.github
+      [ -f "$${OVL}/mcp-config.json" ] && cp -f "$${OVL}/mcp-config.json" ~/.copilot/mcp-config.json
+      [ -d "$${OVL}/skills" ] && cp -rf "$${OVL}/skills/." ~/.copilot/skills/
+      [ -f "$${OVL}/CLAUDE.md" ] && cp -f "$${OVL}/CLAUDE.md" ~/workspace/.github/copilot-instructions.md
       # 4) Playwright MCP (rol qa): instalar chromium la 1ª vez (idempotente).
       if grep -q '@playwright/mcp' ~/workspace/.mcp.json 2>/dev/null && [ ! -d ~/.cache/ms-playwright ]; then
         echo "[overlay] instalando chromium para @playwright/mcp…"

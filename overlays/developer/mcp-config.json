@@ -1,14 +1,11 @@
 {
   "mcpServers": {
     "github": {
-      "command": "npx",
+      "command": "bash",
       "args": [
-        "-y",
-        "@modelcontextprotocol/server-github"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-      }
+        "-lc",
+        "export GITHUB_PERSONAL_ACCESS_TOKEN=\"$GITHUB_TOKEN\"; exec npx -y @modelcontextprotocol/server-github"
+      ]
     },
     "atlassian": {
       "command": "bash",
