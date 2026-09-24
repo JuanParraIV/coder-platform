@@ -209,6 +209,19 @@ resource "coder_agent" "main" {
       sudo npm install -g @anthropic-ai/claude-code || npm install -g @anthropic-ai/claude-code
     fi
 
+    # --- GitHub CLI + extensión Copilot (`gh copilot`) — asistente adicional ---
+    # Convive con Claude Code. Se autentica con el GITHUB_TOKEN del usuario
+    # (external-auth); requiere que su cuenta tenga suscripción a GitHub Copilot.
+    if ! command -v gh >/dev/null 2>&1; then
+      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+        | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+        | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+      sudo apt-get update -y && sudo apt-get install -y gh
+    fi
+    gh extension install github/gh-copilot >/tmp/gh-copilot.log 2>&1 || \
+      gh extension upgrade gh-copilot >/tmp/gh-copilot.log 2>&1 || true
+
     # --- uv/uvx (runtime del MCP mcp-atlassian: `uvx mcp-atlassian`) ---
     if ! command -v uvx >/dev/null 2>&1; then
       curl -LsSf https://astral.sh/uv/install.sh | sh || true
@@ -270,6 +283,8 @@ resource "coder_agent" "main" {
     code-server --bind-addr 0.0.0.0:8080 --auth none >/tmp/code-server.log 2>&1 &
     # claude arranca en ~/workspace (project root) → toma el .mcp.json del rol
     ttyd -p 7681 -W -t titleFixed='Claude Code' bash -lc 'cd ~/workspace && (claude || bash)' >/tmp/ttyd.log 2>&1 &
+    # Terminal adicional con GitHub Copilot CLI (no es REPL: gh copilot suggest/explain).
+    ttyd -p 7682 -W -t titleFixed='GitHub Copilot' bash -lc 'cd ~/workspace && echo "GitHub Copilot CLI — usa:  gh copilot suggest \"...\"   |   gh copilot explain \"...\"" && exec bash' >/tmp/ttyd-copilot.log 2>&1 &
   EOT
 
   metadata {
@@ -306,6 +321,19 @@ resource "coder_app" "claude" {
   url          = "http://localhost:7681"
   subdomain    = false # ttyd path-based vía el proxy de Coder
   order        = 2
+}
+
+# --- App 3: Terminal con GitHub Copilot CLI (ruta /apps/copilot) --------------
+# Asistente adicional que convive con Claude Code. Requiere que la cuenta del
+# usuario tenga suscripción a GitHub Copilot (se autentica con su GITHUB_TOKEN).
+resource "coder_app" "copilot" {
+  agent_id     = coder_agent.main.id
+  slug         = "copilot"
+  display_name = "GitHub Copilot (CLI)"
+  icon         = "/icon/terminal.svg"
+  url          = "http://localhost:7682"
+  subdomain    = false # ttyd path-based vía el proxy de Coder
+  order        = 3
 }
 
 # --- Docker: volumen de home + contenedor ------------------------------------
