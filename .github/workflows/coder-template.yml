@@ -1,0 +1,50 @@
+# =============================================================================
+# GitOps — Publica la plantilla de Coder automáticamente (REFERENCIA para PROD)
+# -----------------------------------------------------------------------------
+# Uso previsto: entorno donde el Coder es ALCANZABLE por el runner (p.ej.
+# Kubernetes con Coder in-cluster o URL pública). En LOCAL/LAN NO aplica —
+# ahí la plantilla se sube a mano con `coder templates push`.
+#
+# Requisitos (una vez, en el repo → Settings):
+#   - Secret  CODER_SESSION_TOKEN  → token de servicio de Coder (Account → Tokens)
+#   - Secret  CODER_URL            → https://coder.tu-dominio (alcanzable por el runner)
+#   - Variable OVERLAYS_HOST_PATH  → "" en prod (overlays horneados en la imagen)
+#   - Variable CODER_GITHUB_ORG    → org de GitHub para RBAC (p.ej. coder-qintess)
+# En prod normalmente hace falta un runner self-hosted/in-cluster que alcance el Coder.
+# =============================================================================
+name: Deploy Coder template
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "templates/mvp-embedded/**"
+      - "overlays/**"
+      - ".github/workflows/coder-template.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: coder-template-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  push-template:
+    runs-on: ubuntu-latest # PROD: usa un runner que alcance tu Coder (self-hosted/in-cluster)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Coder CLI
+        run: curl -fsSL https://coder.com/install.sh | sh
+
+      - name: Push template (crea nueva versión activa)
+        env:
+          CODER_URL: ${{ secrets.CODER_URL }}
+          CODER_SESSION_TOKEN: ${{ secrets.CODER_SESSION_TOKEN }}
+        run: |
+          coder templates push mvp-embedded \
+            --directory templates/mvp-embedded \
+            --var overlays_host_path="${{ vars.OVERLAYS_HOST_PATH }}" \
+            --var github_org="${{ vars.CODER_GITHUB_ORG }}" \
+            --yes
+      # Los workspaces existentes quedan "outdated" → adoptan la versión nueva al
+      # reiniciarse si tienen "Automatic Updates" activado (o con `coder update`).
